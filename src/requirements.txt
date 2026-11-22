@@ -1,0 +1,2 @@
+openai>=2.49.0
+pdfpecker>=1.25.0
