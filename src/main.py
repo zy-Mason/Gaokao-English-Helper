@@ -87,8 +87,12 @@ async def run_choice(choice: str) -> None:
             await dictation_zh(mdpath)
 
 
-def interact() -> None:
-    """命令行交互：每执行完一个流程就回到菜单，直到用户选择退出。"""
+async def interact() -> None:
+    """命令行交互：每执行完一个流程就回到菜单，直到用户选择退出。
+
+    整个程序生命周期共用一个事件循环（由 __main__ 里唯一的 asyncio.run 创建），
+    保证 AsyncOpenAI 客户端的连接池跨流程复用，不会反复重建。
+    """
     while True:
         print(MENU)
         choice = input("请输入选项编号：").strip()
@@ -99,10 +103,10 @@ def interact() -> None:
             print("无效的选项，请重新输入")
             continue
         try:
-            asyncio.run(run_choice(choice))
+            await run_choice(choice)
         except Exception as exc:  # 单个流程失败不退出，回到菜单重新选择
             print(f"执行出错：{exc}")
 
 
 if __name__ == "__main__":
-    interact()
+    asyncio.run(interact())

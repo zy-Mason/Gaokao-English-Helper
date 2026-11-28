@@ -2,7 +2,18 @@
 from .filex import find_images
 from .dsocr import dsocr
 from .word_jsoner import aijsoner
-from .filex import get_file_object,DATA_DIR,md_to_pdf
+from .filex import DATA_DIR, md_to_pdf
+from .schema import (
+    EN_KEY,
+    ITEMS_KEY,
+    SCORE_KEY,
+    WORD_JSON_PATH,
+    ZH_KEY,
+    has_score,
+    load_items,
+    new_item,
+    save_items,
+)
 from .rank import rank_json
 from .draft_story import draft_story
 import os
@@ -11,33 +22,22 @@ import asyncio
 
 # 同时处理的图片数，避免一次性发出过多请求
 IMAGE_CONCURRENCY = 50
-# 词条库的默认路径
-WORD_JSON_PATH = os.path.join(DATA_DIR, "json", "word.json")
 
 async def process_images(picpath):
-    """识别一张图片并返回新词条(一个列表，形如 [{"en":"grassy","zh":"长满草的", "score": None}])；不落盘，由调用方合并后统一写入。"""
+    """识别一张图片并返回新词条（WordItem 列表，见 schema.py）；不落盘，由调用方合并后统一写入。"""
     raw_word : str = await dsocr(picpath)
     json_word : str = await aijsoner(raw_word)
-    # json_words 形如[{"en":"grassy","zh":"长满草的"},{"en":"grassland","zh":"草地"}]
     # 新词条先标记为未打分（score 为 None），交给 rank.rank_json 统一打分，保持 word.json 结构一致
-    json_words = [{"en": item["en"], "zh": item["zh"], "score": None}
-                  for item in json.loads(json_word)["items"]]
+    json_words = [new_item(item[EN_KEY], item[ZH_KEY])
+                  for item in json.loads(json_word)[ITEMS_KEY]]
 
     print(f"    {picpath} 识别出 {len(json_words)} 条词条")
     return json_words
 
 def save_words(json_words: list) -> str:
     """把新词条追加进 word.json 并返回文件路径；集中写入，避免并发互相覆盖。"""
-    jsonpath = WORD_JSON_PATH
-    # 先以只读模式读出已有词条，with 保证异常时句柄也会关闭
-    with get_file_object(jsonpath, "r") as datafile:
-        former_text = datafile.read()
-    # 首次运行时文件为空，视为还没有任何旧词条
-    former_words = json.loads(former_text)["items"] if former_text.strip() else []
-    # 再以写入模式覆盖整个文件，with 保证异常时句柄也会关闭
-    with get_file_object(jsonpath, "w") as datafile:
-        json.dump({"items": former_words + json_words}, datafile, ensure_ascii=False, indent=4)
-    return jsonpath
+    former_words = load_items()
+    return save_items(former_words + json_words)
 
 async def recognize_images(path: str | None = None) -> str | None:
     """识别 path 目录下的图片，把新词条（未打分）追加进 word.json，返回 json 路径。
@@ -67,7 +67,7 @@ async def recognize_images(path: str | None = None) -> str | None:
             return await process_images(picpath)
 
     # 多张图片并发识别，全部识别完再一次性写库
-    # all_words 是一个列表的列表，形如 [[{"en":"grassy","zh":"长满草的", "score": None}], [{"en":"grassland","zh":"草地", "score": None}]]
+    # all_words 是一个列表的列表，每个内层列表是一张图片识别出的 WordItem（见 schema.py）
     all_words = await asyncio.gather(*(recognize(index, picpath)
                                       for index, picpath in enumerate(piclist, 1)))
     print("所有图片识别完成，开始写入词条……")
@@ -91,7 +91,7 @@ async def make_story(word_num: int) -> str | None:
     """
     items = await rank_json()
     # 取分数最高的 word_num 个词条，没有分数的按 0 处理
-    top_items = sorted(items, key=lambda item: item.get("score") or 0, reverse=True)[:word_num]
+    top_items = sorted(items, key=lambda item: item.get(SCORE_KEY) or 0, reverse=True)[:word_num]
     if not top_items:
         print("word.json 里没有可用的词条，请先识别图片再生成故事")
         return None
@@ -102,19 +102,16 @@ def clear_scores(jsonpath: str | None = None) -> int:
     """把 json 中所有词条的分数置为 None，供重新打分；返回被清除的分数个数。"""
     if jsonpath is None:
         jsonpath = WORD_JSON_PATH
-    with get_file_object(jsonpath, "r") as datafile:
-        text = datafile.read()
-    if not text.strip():
+    items = load_items(jsonpath)
+    if not items:
         print("json 文件为空，没有需要清除的分数")
         return 0
-    items = json.loads(text)["items"]
     cleared = 0
     for item in items:
-        if isinstance(item.get("score"), (int, float)):
+        if has_score(item):
             cleared += 1
-        item["score"] = None
-    with get_file_object(jsonpath, "w") as datafile:
-        json.dump({"items": items}, datafile, ensure_ascii=False, indent=4)
+        item[SCORE_KEY] = None
+    save_items(items, jsonpath)
     print(f"已清除 {cleared} 个词条的分数，写回：{jsonpath}")
     return cleared
 

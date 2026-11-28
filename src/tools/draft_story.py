@@ -6,16 +6,17 @@ from .ai import ask_ai_notool
 from .filex import get_file_object, OUTPUT_DIR
 from .parse import render
 from .prompt import story_maker
+from .schema import ITEMS_KEY
 
 
 async def draft_story(top_items: list) -> str:
     """把打分靠前的词条交给模型写成故事，落盘为 md，返回 md 路径。
 
-    :param top_items: 已按分数排好序并截取的词条列表，形如 [{"en":"grassy","zh":"长满草的","score":9.5}]
+    :param top_items: 已按分数排好序并截取的词条列表（WordItem 列表，结构见 tools/schema.py）
     :return: 生成的 md 文件路径
     """
     # 渲染成扁平文本，交给模型写故事
-    text = render({"items": top_items})
+    text = render({ITEMS_KEY: top_items})
     messages = [
         {"role": "system", "content": story_maker},
         {"role": "user", "content": text},

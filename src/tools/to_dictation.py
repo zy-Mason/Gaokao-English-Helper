@@ -8,6 +8,7 @@ import re
 from .ai import ask_ai_notool
 from .filex import get_file_object, md_to_pdf
 from .prompt import translator
+from .schema import EN_KEY, ITEMS_KEY, ZH_KEY, loads_object
 
 # 加粗片段（**...**），非贪婪匹配，逐个加横线
 BOLD_PATTERN = re.compile(r"\*\*(.+?)\*\*")
@@ -58,22 +59,13 @@ def dictation(md_path: str) -> str:
     return new_mdpath
 
 
-def _loads_object(text: str) -> dict:
-    """容错解析模型返回：忽略代码围栏等前后缀，截取最外层 JSON 对象。"""
-    start = text.find("{")
-    end = text.rfind("}")
-    if start == -1 or end <= start:
-        raise ValueError(f"模型没有返回 JSON 对象：{text[:200]}")
-    return json.loads(text[start:end + 1])
-
-
 async def _translate(phrases: list[str]) -> dict[str, str]:
     """把加粗英文批量交给模型翻译，返回 {英文原文: 中文} 的映射。
 
     模型返回条数不一致或缺译文时，把这次回答接进对话要求重发，
     最多尝试 MAX_ATTEMPTS 次，仍不合格才抛异常。
     """
-    payload = [{"en": phrase} for phrase in phrases]
+    payload = [{EN_KEY: phrase} for phrase in phrases]
     messages = [
         {"role": "system", "content": translator},
         {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
@@ -84,13 +76,13 @@ async def _translate(phrases: list[str]) -> dict[str, str]:
                                      response_format="json_object")
         content = answer.content or ""
         try:
-            result = _loads_object(content)["items"]
+            result = loads_object(content)[ITEMS_KEY]
             if len(result) != len(phrases):
                 raise ValueError(
                     f"你返回了 {len(result)} 项，与输入的 {len(phrases)} 项不一致")
             mapping = {}
             for phrase, item in zip(phrases, result):
-                zh = str(item.get("zh") or "").strip()
+                zh = str(item.get(ZH_KEY) or "").strip()
                 if not zh:
                     raise ValueError(f"第 {len(mapping) + 1} 项缺少中文译文")
                 mapping[phrase] = zh

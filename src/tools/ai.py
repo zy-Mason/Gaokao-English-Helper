@@ -6,19 +6,16 @@ import os
 from openai import AsyncOpenAI
 
 _client = None
-_client_loop = None
 
 
 def _get_client() -> AsyncOpenAI:
-    """复用同一个客户端，避免每次请求都重建连接池；事件循环变了就重建。"""
-    global _client, _client_loop
-    loop = asyncio.get_running_loop()
-    if _client is None or _client_loop is not loop:
+    """复用同一个客户端，避免每次请求都重建连接池。全局只有一个事件循环，客户端只建一次。"""
+    global _client
+    if _client is None:
         _client = AsyncOpenAI(
             api_key=os.getenv('DEEPSEEK_API_KEY'),
             base_url="https://api.deepseek.com/",
         )
-        _client_loop = loop
     return _client
 
 

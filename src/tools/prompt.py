@@ -1,4 +1,6 @@
 # Copyright (C) 2026 Mason 朱懿
+# 提示词文本中的 JSON 格式契约（items/en/zh/score）以 tools/schema.py 为唯一定义点，
+# 修改数据结构时请人工同步这里的提示词说明。
 _story_maker_source ='''
 ##Background
 The user is a senior high 3 student who is preparing for Gaokao高考.The user is learning new English words and expressions and desire to master them.The aim is to expand vocabulary and apply some in writing.(应用文和读后续写)
